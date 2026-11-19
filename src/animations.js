@@ -347,6 +347,236 @@ export function pulse() {
   return { frames, fps: 18 };
 }
 
+// ---------------------------------------------------------------------------
+// Second batch
+
+/** Deterministic noise in [0, 1) for integer inputs. */
+function hash3(a, b, c) {
+  let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(c | 0, 2147483647);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+const weekTotals = (data) =>
+  Array.from({ length: W }, (_, x) => {
+    let s = 0;
+    for (let y = 0; y < H; y++) s += data[idx(x, y)];
+    return s;
+  });
+
+/** Flames rise from the bottom of the board. Your busiest weeks burn hottest. */
+export function oven(data) {
+  const L = 60;
+  const week = weekTotals(data);
+  const max = Math.max(1, ...week);
+  const cols = Array.from({ length: W }, (_, x) => ({
+    k: 1 + Math.floor(hash3(x, 1, 7) * 3),
+    p: hash3(x, 2, 7),
+    heat: 0.5 + 0.85 * (week[x] / max),
+  }));
+  const R = H + 2; // two hidden fuel rows under the board
+  const heat = new Float32Array(W * R);
+  const at = (x, y) => heat[y * W + clamp(x, 0, W - 1)];
+
+  const frames = steady(L, (_t, tm) => {
+    for (let x = 0; x < W; x++) {
+      const c = cols[x];
+      for (const y of [R - 1, R - 2]) {
+        const swell = 0.55 + 0.45 * Math.sin(TAU * ((c.k * tm) / L + c.p));
+        heat[y * W + x] = c.heat * swell * (0.6 + 0.8 * hash3(x, y, tm));
+      }
+    }
+    for (let y = 0; y < R - 2; y++)
+      for (let x = 0; x < W; x++) {
+        const avg = (at(x - 1, y + 1) + at(x, y + 1) + at(x + 1, y + 1) + at(x, y + 2)) / 4;
+        heat[y * W + x] = Math.max(0, avg - 0.035 - 0.07 * hash3(x, y, tm + 1000));
+      }
+    const f = blank();
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const v = heat[y * W + x];
+        f[idx(x, y)] = v > 0.6 ? 4 : v > 0.42 ? 3 : v > 0.27 ? 2 : v > 0.13 ? 1 : 0;
+      }
+    return f;
+  });
+  return { frames, fps: 15 };
+}
+
+/** Each week collapses into a bar, the bars sort themselves, then everything rewinds. */
+export function sort(data) {
+  const toFrame = (cs) => {
+    const f = blank();
+    cs.forEach((c, x) => c.forEach((l, y) => (f[idx(x, y)] = l)));
+    return f;
+  };
+  let cs = Array.from({ length: W }, (_, x) => Array.from({ length: H }, (_, y) => data[idx(x, y)]));
+  const seq = [];
+  for (let i = 0; i < 12; i++) seq.push(toFrame(cs));
+
+  // Gravity: every active day drops to the bottom of its week, one row per frame.
+  for (let moved = true; moved; ) {
+    moved = false;
+    for (const c of cs)
+      for (let y = H - 2; y >= 0; y--)
+        if (c[y] && !c[y + 1]) {
+          c[y + 1] = c[y];
+          c[y] = 0;
+          moved = true;
+        }
+    if (moved) seq.push(toFrame(cs));
+  }
+  for (let i = 0; i < 8; i++) seq.push(toFrame(cs));
+
+  // Odd-even transposition sort: all non-overlapping neighbour swaps happen in one frame.
+  const key = (c) => c.filter(Boolean).length * 100 + c.reduce((a, b) => a + b, 0);
+  for (let p = 0, quiet = 0; quiet < 2; p++) {
+    let swapped = false;
+    for (let i = p % 2; i + 1 < W; i += 2)
+      if (key(cs[i]) > key(cs[i + 1])) {
+        [cs[i], cs[i + 1]] = [cs[i + 1], cs[i]];
+        swapped = true;
+      }
+    quiet = swapped ? 0 : quiet + 1;
+    if (swapped) seq.push(toFrame(cs));
+  }
+  for (let i = 0; i < 20; i++) seq.push(toFrame(cs));
+
+  return { frames: seq.concat(seq.slice(1, -1).reverse()), fps: 12 };
+}
+
+/** Static noise locks into your real board week by week, holds, then scrambles again. */
+export function decrypt(data) {
+  const rnd = rng(31);
+  const lock = new Int16Array(N);
+  const unlock = new Int16Array(N);
+  for (let x = 0; x < W; x++)
+    for (let y = 0; y < H; y++) lock[idx(x, y)] = 10 + Math.round(x * 0.9 + rnd() * 14);
+  const holdEnd = Math.max(...lock) + 34;
+  for (let x = 0; x < W; x++)
+    for (let y = 0; y < H; y++) unlock[idx(x, y)] = holdEnd + Math.round(x * 0.9 + rnd() * 14);
+  const F = Math.max(...unlock) + 10;
+
+  const frames = [];
+  for (let t = 0; t < F; t++) {
+    const f = blank();
+    for (let i = 0; i < N; i++) {
+      if (t >= lock[i] && t < unlock[i]) {
+        f[i] = t - lock[i] < 2 ? 4 : data[i];
+      } else {
+        const v = hash3(i, Math.floor((t + (i % 3)) / 3), 5);
+        f[i] = v < 0.7 ? 0 : v < 0.85 ? 1 : v < 0.95 ? 2 : 4;
+      }
+    }
+    frames.push(f);
+  }
+  return { frames, fps: 15 };
+}
+
+/** Old-school demo plasma: overlapping sine fields drawn as contour bands. */
+export function plasma() {
+  const L = 64;
+  const bands = [0, 0, 0, 1, 2, 4, 2, 1];
+  const frames = [];
+  for (let t = 0; t < L; t++) {
+    const a = (TAU * t) / L;
+    const cx = W / 2 + 18 * Math.sin(a);
+    const cy = H / 2 + 3 * Math.cos(2 * a);
+    const f = blank();
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const v =
+          Math.sin(x / 5 + a) +
+          Math.sin((x * 0.5 + y) / 2.5 - 2 * a) +
+          Math.sin(Math.hypot(x - cx, y - cy) / 2.2 - a);
+        const n = (((v + 3) / 3) % 1 + 1) % 1; // two contour cycles across the range
+        f[idx(x, y)] = bands[Math.floor(n * bands.length) % bands.length];
+      }
+    frames.push(f);
+  }
+  return { frames, fps: 13 };
+}
+
+/** Three spouts pour sand into heaps; then the floor opens and it all drains away. */
+export function sand() {
+  const rnd = rng(41);
+  const spouts = [11, 26, 41];
+  const g = blank();
+  const frames = [];
+  const step = (t, floorOpen) => {
+    let moved = false;
+    if (floorOpen)
+      for (let x = 0; x < W; x++)
+        if (g[idx(x, H - 1)]) {
+          g[idx(x, H - 1)] = 0;
+          moved = true;
+        }
+    for (let y = H - 2; y >= 0; y--) {
+      const xs = Array.from({ length: W }, (_, k) => (t % 2 ? k : W - 1 - k));
+      for (const x of xs) {
+        const i = idx(x, y);
+        if (!g[i]) continue;
+        const d = rnd() < 0.5 ? -1 : 1;
+        for (const nx of [x, x + d, x - d]) {
+          if (nx < 0 || nx >= W) continue;
+          const j = idx(nx, y + 1);
+          if (g[j]) continue;
+          if (nx !== x && g[idx(nx, y)]) continue; // can't slip through a neighbour
+          g[j] = g[i];
+          g[i] = 0;
+          moved = true;
+          break;
+        }
+      }
+    }
+    return moved;
+  };
+
+  let t = 0;
+  for (; t < 70; t++) {
+    if (t % 2 === 0)
+      for (const s of spouts) if (!g[idx(s, 0)]) g[idx(s, 0)] = 2 + Math.floor(rnd() * 3);
+    step(t, false);
+    frames.push(g.slice());
+  }
+  while (step(t++, false)) frames.push(g.slice());
+  for (let i = 0; i < 24; i++) frames.push(g.slice());
+  while (step(t++, true)) frames.push(g.slice());
+  for (let i = 0; i < 8; i++) frames.push(g.slice());
+  return { frames, fps: 15 };
+}
+
+/** Three layers of stars drift past at different speeds. */
+export function starfield() {
+  const L = 120;
+  const rnd = rng(53);
+  const layers = [
+    { v: 0.5, n: 18, lvl: 1, wrap: 60 },
+    { v: 0.75, n: 16, lvl: 2, wrap: 90 },
+    { v: 1, n: 12, lvl: 4, wrap: 60, tail: true },
+  ];
+  for (const layer of layers)
+    layer.stars = Array.from({ length: layer.n }, () => ({
+      x0: rnd() * layer.wrap,
+      y: Math.floor(rnd() * H),
+    }));
+  const frames = [];
+  for (let t = 0; t < L; t++) {
+    const f = blank();
+    for (const layer of layers)
+      for (const s of layer.stars) {
+        const x = Math.floor((((s.x0 - layer.v * t) % layer.wrap) + layer.wrap) % layer.wrap);
+        put(f, x, s.y, layer.lvl);
+        if (layer.tail) {
+          put(f, x + 1, s.y, 2);
+          put(f, x + 2, s.y, 1);
+        }
+      }
+    frames.push(f);
+  }
+  return { frames, fps: 20 };
+}
+
+
 export const ANIMATIONS = {
   gravity: { fn: gravity, title: 'Gravity', blurb: 'Your year drops in column by column, settles, then falls through the floor.' },
   wave: { fn: wave, title: 'Wave', blurb: 'A diagonal swell of light rolls across your board.' },
@@ -358,4 +588,10 @@ export const ANIMATIONS = {
   fireworks: { fn: fireworks, title: 'Fireworks', blurb: 'Rockets climb the board and burst into sparks.' },
   equalizer: { fn: equalizer, title: 'Equalizer', blurb: 'Every week becomes a bouncing bar with hanging peak markers.' },
   pulse: { fn: pulse, title: 'Pulse', blurb: 'A heart-monitor trace sweeps across the board.' },
+  oven: { fn: oven, title: 'Oven', blurb: 'Flames rise from the bottom of the board. Your busiest weeks burn hottest.' },
+  sort: { fn: sort, title: 'Sort', blurb: 'Each week collapses into a bar, the bars sort themselves, then it all rewinds.' },
+  decrypt: { fn: decrypt, title: 'Decrypt', blurb: 'Static noise locks into your real board week by week, then scrambles again.' },
+  plasma: { fn: plasma, title: 'Plasma', blurb: 'Old-school demo plasma: overlapping sine waves drawn as contour bands.' },
+  sand: { fn: sand, title: 'Sand', blurb: 'Three spouts pour sand into heaps, then the floor opens and it drains away.' },
+  starfield: { fn: starfield, title: 'Starfield', blurb: 'Three layers of stars drift past at different speeds.' },
 };
