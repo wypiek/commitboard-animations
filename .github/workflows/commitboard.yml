@@ -1,0 +1,46 @@
+name: Commit board animations
+
+on:
+  schedule:
+    - cron: '17 3 * * *' # daily
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: commitboard
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Generate animations from your contribution graph
+        env:
+          # Optional: a personal access token in COMMITBOARD_TOKEN lets private
+          # contributions count. Otherwise the built-in token is used.
+          GITHUB_TOKEN: ${{ secrets.COMMITBOARD_TOKEN || secrets.GITHUB_TOKEN }}
+          COMMITBOARD_USER: ${{ vars.COMMITBOARD_USER || github.repository_owner }}
+          MARQUEE_TEXT: ${{ vars.MARQUEE_TEXT }}
+        run: node src/cli.js --user "$COMMITBOARD_USER" --out dist --text "$MARQUEE_TEXT"
+
+      - name: Publish to the output branch
+        env:
+          PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd dist
+          git init -q -b output
+          git add .
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "Update commit board animations"
+          git push -q --force "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" output
