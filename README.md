@@ -18,6 +18,12 @@ The previews below use generated sample data. Yours will show your real year.
 | **fireworks**: rockets climb the board and burst into sparks | <img src="examples/fireworks-dark.svg" width="420"> |
 | **equalizer**: every week becomes a bouncing bar with hanging peaks | <img src="examples/equalizer-dark.svg" width="420"> |
 | **pulse**: a heart-monitor trace sweeps across the board | <img src="examples/pulse-dark.svg" width="420"> |
+| **oven**: flames rise from the bottom of the board, and your busiest weeks burn hottest | <img src="examples/oven-dark.svg" width="420"> |
+| **sort**: each week collapses into a bar, the bars sort themselves, then it all rewinds | <img src="examples/sort-dark.svg" width="420"> |
+| **decrypt**: static noise locks into your real board week by week, then scrambles again | <img src="examples/decrypt-dark.svg" width="420"> |
+| **plasma**: old-school demo plasma drawn as glowing contour bands | <img src="examples/plasma-dark.svg" width="420"> |
+| **sand**: three spouts pour sand into heaps, then the floor opens and it drains away | <img src="examples/sand-dark.svg" width="420"> |
+| **starfield**: three layers of stars drift past at different speeds | <img src="examples/starfield-dark.svg" width="420"> |
 
 Every animation comes in `-light` and `-dark` variants using GitHub's own greens.
 
@@ -26,7 +32,14 @@ Every animation comes in `-light` and `-dark` variants using GitHub's own greens
 1. Merge this into `main`. The workflow in `.github/workflows/commitboard.yml` runs on every
    push to `main`, once a day, and on demand from the Actions tab. It fetches your contribution
    graph and publishes the SVGs to an `output` branch.
-2. Embed one in your profile README, swapping in your name, repo and animation:
+2. Embed one in your profile README, swapping in your name and animation:
+
+   ```md
+   ![Commit board animation](https://raw.githubusercontent.com/USER/commitboard-animations/output/life-dark.svg)
+   ```
+
+   To switch between light and dark with the viewer's theme, use a `<picture>` tag instead.
+   It works on github.com, but the GitHub mobile app shows it as a broken image:
 
    ```html
    <picture>
