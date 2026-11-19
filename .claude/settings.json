@@ -1,0 +1,20 @@
+{
+  "extraKnownMarketplaces": {
+    "homebrew-claude": {
+      "source": {
+        "source": "github",
+        "repo": "wypiek/homebrew-claude"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "homebrew-channel@homebrew-claude": true
+  },
+  "pluginConfigs": {
+    "homebrew-channel@homebrew-claude": {
+      "options": {
+        "color": "grey"
+      }
+    }
+  }
+}
