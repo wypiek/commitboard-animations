@@ -1,0 +1,18 @@
+{
+  "name": "commitboard-animations",
+  "version": "1.0.0",
+  "description": "Animated SVGs built from your GitHub contribution graph.",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "commitboard": "src/cli.js"
+  },
+  "scripts": {
+    "build": "node src/cli.js --out dist",
+    "examples": "node src/cli.js --sample --out examples"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
